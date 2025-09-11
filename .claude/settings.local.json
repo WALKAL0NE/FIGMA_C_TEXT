@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun install:*)",
+      "Bash(bun run:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node:*)",
+      "Bash(rm:*)",
+      "Bash(tsc:*)",
+      "Bash(bun x tsc:*)",
+      "Bash(ls:*)"
+    ],
+    "deny": []
+  }
+}

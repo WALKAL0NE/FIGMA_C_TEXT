@@ -1,0 +1,268 @@
+# Figma Text Style Exporter - 仕様書
+
+project:
+  name: "Figma Text Style Exporter"
+  version: "1.0.0"
+  description: "FigmaでテキストスタイルをSASS記法で出力するプラグイン"
+  plugin_id: "1547924564727075297"
+
+# 技術スタック
+tech_stack:
+  runtime: "Bun"
+  language: 
+    source: "TypeScript"
+    compiled: "JavaScript"
+  ui: "外部HTMLファイル"
+  build_tool: "TypeScript Compiler (tsc)"
+
+# ファイル構成
+file_structure:
+  root: "/Users/itoh/Works/FIGMA_C_TEXT/"
+  files:
+    - name: "manifest.json"
+      description: "プラグイン設定ファイル"
+      type: "config"
+    - name: "code.ts"
+      description: "TypeScriptソースコード"
+      type: "source"
+    - name: "code.js"
+      description: "コンパイル済みJavaScript"
+      type: "compiled"
+    - name: "ui.html"
+      description: "メインUIファイル"
+      type: "ui"
+    - name: "ui-simple.html"
+      description: "テスト用簡易UI"
+      type: "test"
+    - name: "package.json"
+      description: "Bunパッケージ設定"
+      type: "config"
+    - name: "tsconfig.json"
+      description: "TypeScript設定"
+      type: "config"
+    - name: "CLAUDE.md"
+      description: "プロジェクト文書"
+      type: "documentation"
+
+# ビルドコマンド
+build:
+  command: "bun run build"
+  process: "tsc --outFile code.js"
+  reload_method:
+    development: "Cmd + Option + P → R"
+    manifest_change: "プラグイン削除 → 再インポート"
+
+# 機能仕様
+features:
+  # テキストスタイル抽出
+  text_style_extraction:
+    target: "Figmaで選択されたテキストノード"
+    extracted_properties:
+      font_size:
+        source: "px"
+        output: "rem (px ÷ 16)"
+      font_weight:
+        source: "number (100-900)"
+        output: "name (thin, normal, bold等)"
+      font_family:
+        source: "font.family"
+        output: "string"
+      letter_spacing:
+        source: "PERCENT unit"
+        output: "em (value ÷ 100)"
+      line_height:
+        source: "PERCENT/PIXELS unit"
+        output: "unitless ratio"
+
+  # SASS出力システム
+  sass_output:
+    template_system:
+      customizable: true
+      default_template: |
+        +text($size(rem), $weight, $family)
+        letter-spacing: $spacing(em)
+        line-height: $lineHeight(%)
+    variables:
+      - name: "$size(unit)"
+        description: "フォントサイズ"
+        units: ["px", "rem", "unitless"]
+      - name: "$weight"
+        description: "フォントウェイト"
+        units: ["name", "number", "unitless"]
+      - name: "$family"
+        description: "フォントファミリー"
+        units: ["string"]
+      - name: "$spacing(unit)"
+        description: "文字間隔"
+        units: ["%", "em", "unitless", "px"]
+      - name: "$lineHeight(unit)"
+        description: "行高"
+        units: ["%", "unitless", "px"]
+
+  # 単位変換システム
+  unit_conversion:
+    font_size:
+      px: "rem × 16"
+      rem: "そのまま"
+      unitless: "数値のみ"
+    font_weight:
+      number: "thin(100) → black(900)"
+      unitless: "thin(100) → black(900)"
+      name: "thin, extralight, light, normal, medium, semibold, bold, extrabold, black"
+      default: "名前表記"
+    letter_spacing:
+      percent: "em × 100"
+      em: "そのまま"
+      unitless: "数値のみ"
+      px: "em × 16"
+    line_height:
+      percent: "unitless × 100"
+      unitless: "そのまま"
+      default: "そのまま"
+      px: "unitless × 16"
+
+  # Font Alias機能
+  font_alias:
+    storage: "Figma clientStorage"
+    key: "fontAliases"
+    functionality: "フォント名をカスタムエイリアスに置換"
+    ui_components:
+      - "フォントごとのエイリアス入力フィールド"
+      - "エイリアス一覧表示"
+      - "削除ボタン"
+    persistence: "自動保存"
+
+  # 設定システム
+  settings:
+    storage: "Figma clientStorage"
+    key: "pluginSettings"
+    configurable_items:
+      - name: "template"
+        type: "string"
+        description: "SASSテンプレート文字列"
+    ui_components:
+      - "テキストエリア（テンプレート編集）"
+      - "変数ヘルプテキスト"
+    persistence: "自動保存"
+
+  # UI機能
+  ui_features:
+    copy_function:
+      description: "SASSコードをクリップボードにコピー"
+      fallback: "テキスト選択状態にする"
+    real_time_update:
+      trigger: "テキスト選択時"
+      behavior: "自動更新"
+    notifications:
+      copy_success: "Figmaトースト通知"
+    close_function: "プラグイン終了"
+
+# プラグイン設定
+plugin_config:
+  manifest:
+    name: "Figma Text Style Exporter"
+    id: "1547924564727075297"
+    api_version: "1.0.0"
+    main_file: "code.js"
+    ui_file: "ui-simple.html"  # 現在テスト中
+    document_access: "dynamic-page"
+    network_access:
+      allowed_domains: ["none"]
+    permissions: []
+    menu: []
+    relaunch_buttons:
+      - command: "open"
+        name: "Open Text Style Exporter"
+
+# 動作フロー
+workflow:
+  initialization:
+    - "figma.showUI() でUI表示"
+    - "checkCurrentSelection() で初期選択チェック"
+    - "clientStorage からエイリアスと設定を読み込み"
+  
+  text_selection:
+    - "figma.on('selectionchange') でイベント監視"
+    - "TEXTタイプのノードをフィルタリング"
+    - "extractTextStyles() でスタイル抽出"
+  
+  sass_generation:
+    - "テンプレートパースで変数抽出"
+    - "単位変換処理"
+    - "エイリアス適用"
+    - "最終SASS文字列生成"
+  
+  ui_update:
+    - "figma.ui.postMessage() でUI更新"
+    - "コードブロック表示"
+    - "エイリアス入力フィールド更新"
+    - "設定パネル表示"
+  
+  user_interaction:
+    - "コピーボタンクリック → クリップボード操作"
+    - "エイリアス入力 → 自動保存"
+    - "テンプレート編集 → 自動保存"
+    - "閉じるボタン → プラグイン終了"
+
+# メッセージング仕様
+messaging:
+  plugin_to_ui:
+    - type: "no-selection"
+      description: "テキスト未選択時"
+    - type: "no-text"
+      description: "テキスト以外選択時"
+    - type: "style-extracted"
+      description: "スタイル抽出完了時"
+      payload: ["sass", "styles"]
+    - type: "aliases-loaded"
+      description: "エイリアス読み込み完了時"
+    - type: "settings-loaded"
+      description: "設定読み込み完了時"
+  
+  ui_to_plugin:
+    - type: "get-aliases"
+      description: "エイリアス読み込み要求"
+    - type: "save-aliases"
+      description: "エイリアス保存要求"
+    - type: "get-settings"
+      description: "設定読み込み要求"
+    - type: "save-settings"
+      description: "設定保存要求"
+    - type: "copy-success"
+      description: "コピー成功通知"
+    - type: "close"
+      description: "プラグイン終了要求"
+
+# 現在の課題
+issues:
+  high_priority:
+    - description: "UI表示問題"
+      detail: "HTMLファイルが正しく読み込まれていない"
+      status: "ui-simple.htmlでテスト中"
+    
+  medium_priority:
+    - description: "権限警告"
+      detail: "camera, microphone, clipboard-write等の警告"
+      status: "meta Permissions-Policy追加済み"
+  
+  low_priority:
+    - description: "権限エラー表示"
+      detail: "Figmaブラウザ環境の一般的な警告"
+      status: "動作に影響なし"
+
+# 開発環境
+development:
+  directory: "/Users/itoh/Works/FIGMA_C_TEXT"
+  git_repo: false
+  platform: "darwin (macOS)"
+  os_version: "Darwin 24.1.0"
+  
+# テスト状況
+testing:
+  current_test_file: "ui-simple.html"
+  test_purpose: "基本UI読み込みテスト"
+  expected_results:
+    - "Simple UI Test タイトル表示"
+    - "Test Button ボタン表示"
+    - "コンソールに 'Simple UI script loaded' 表示"
+    - "ボタンクリックでアラート表示"

@@ -1,0 +1,16 @@
+{
+  "name": "figma-text-style-exporter",
+  "version": "1.0.0",
+  "description": "Figma plugin to export selected text styles as SASS notation",
+  "main": "code.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --outFile code.js",
+    "watch": "tsc --watch --outFile code.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@figma/plugin-typings": "^1.50.0",
+    "typescript": "^5.0.0"
+  }
+}

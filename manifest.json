@@ -1,0 +1,22 @@
+{
+  "name": "Figma Text Style Exporter",
+  "id": "1547924564727075297",
+  "api": "1.0.0",
+  "main": "code.js",
+  "capabilities": [],
+  "enableProposedApi": false,
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "ui": {},
+  "networkAccess": {
+    "allowedDomains": ["none"]
+  },
+  "permissions": [],
+  "menu": [],
+  "relaunchButtons": [
+    {
+      "command": "open",
+      "name": "Open Text Style Exporter"
+    }
+  ]
+}

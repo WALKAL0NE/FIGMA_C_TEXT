@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Debug UI</title>
+  <style>
+    body {
+      font-family: system-ui;
+      padding: 16px;
+      margin: 0;
+    }
+    .debug { 
+      background: #f0f0f0; 
+      padding: 8px; 
+      margin: 8px 0; 
+      border-radius: 4px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Debug UI Test</h2>
+  <div id="status" class="debug">UI Loading...</div>
+  <div id="messages" class="debug">No messages received</div>
+  
+  <script>
+    console.log('Debug UI script loaded');
+    
+    document.getElementById('status').textContent = 'UI Loaded Successfully';
+    
+    // Send ready message
+    console.log('Sending ui-ready message');
+    parent.postMessage({ pluginMessage: { type: 'ui-ready' } }, '*');
+    
+    let messageCount = 0;
+    
+    window.onmessage = function(event) {
+      messageCount++;
+      console.log('UI received message:', event.data);
+      
+      const messagesDiv = document.getElementById('messages');
+      messagesDiv.innerHTML = `
+        <strong>Message ${messageCount}:</strong><br>
+        ${JSON.stringify(event.data, null, 2)}
+      `;
+      
+      const message = event.data.pluginMessage;
+      if (message && message.type === 'style-extracted') {
+        const stylesDiv = document.createElement('div');
+        stylesDiv.className = 'debug';
+        stylesDiv.innerHTML = `
+          <strong>Styles Extracted:</strong><br>
+          Font Size: ${message.styles.fontSize}<br>
+          Font Weight: ${message.styles.fontWeight}<br>
+          Font Family: ${message.styles.fontFamily}
+        `;
+        document.body.appendChild(stylesDiv);
+      }
+    };
+  </script>
+</body>
+</html>
