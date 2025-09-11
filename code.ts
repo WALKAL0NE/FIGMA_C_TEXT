@@ -33,6 +33,7 @@ function extractTextStyles(node: TextNode, basePixelSize: number = 16): any {
   const fontFamily = node.fontName as { family: string };
   const letterSpacing = node.letterSpacing;
   const lineHeight = node.lineHeight;
+  const textAlign = node.textAlignHorizontal as any;
   
   let lineHeightValue = 1;
   if (lineHeight && lineHeight !== figma.mixed) {
@@ -48,12 +49,24 @@ function extractTextStyles(node: TextNode, basePixelSize: number = 16): any {
     }
   }
 
+  // テキスト配置の変換
+  let textAlignValue = 'left';
+  if (textAlign !== figma.mixed) {
+    switch (textAlign) {
+      case 'CENTER': textAlignValue = 'center'; break;
+      case 'RIGHT': textAlignValue = 'right'; break;
+      case 'JUSTIFIED': textAlignValue = 'justify'; break;
+      default: textAlignValue = 'left';
+    }
+  }
+
   return {
     fontSize: pxToRem(fontSize, basePixelSize),
     fontWeight: getFontWeightString(fontWeight),
     fontFamily: fontFamily.family,
     letterSpacing: letterSpacing !== figma.mixed ? letterSpacingToEm(letterSpacing) : '0em',
-    lineHeight: lineHeightValue.toFixed(2).replace(/\.?0+$/, '')
+    lineHeight: lineHeightValue.toFixed(2).replace(/\.?0+$/, ''),
+    textAlign: textAlignValue
   };
 }
 
@@ -90,7 +103,7 @@ function checkCurrentSelection() {
 // プラグイン側でエイリアスと設定を管理
 let pluginAliases: { [key: string]: string } = {};
 let pluginSettings = {
-  template: '+text($size(rem), $weight, $family)\nletter-spacing: $spacing(em)\nline-height: $lineHeight(%)',
+  template: '+text($size(rem), $weight, $family)\nletter-spacing: $spacing(em)\nline-height: $lineHeight',
   basePixelSize: 16
 };
 
@@ -147,12 +160,51 @@ const htmlContent = `
       margin: 0; padding: 16px; background: #fff; font-size: 14px; color: #333;
     }
     h1 { font-size: 18px; margin: 0 0 16px 0; color: #000; }
-    h3 { margin: 0 0 1em 0; }
+    h3 { margin: 0 0 8px 0; }
     .message { padding: 12px; background: #f5f5f5; border-radius: 4px; text-align: center; color: #666; margin-bottom: 16px; }
+    .code-container {
+      position: relative;
+      margin-bottom: 16px;
+    }
     .code-block {
       background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px;
       font-family: Monaco, monospace; font-size: 12px; white-space: pre; overflow-x: auto;
-      margin-bottom: 16px; min-height: 60px;
+      min-height: 60px;
+    }
+    .copy-icon {
+      position: absolute;
+      top: 0px;
+      right: 0px;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      padding: 0px;
+    }
+    .copy-icon:hover {
+      background: #fff;
+      border-color: #18a0fb;
+    }
+    .copy-icon svg {
+      width: 16px;
+      height: 16px;
+      fill: #666;
+    }
+    .copy-icon:hover svg {
+      fill: #18a0fb;
+    }
+    .copy-icon.copied {
+      background: #18a0fb;
+      border-color: #18a0fb;
+    }
+    .copy-icon.copied svg {
+      fill: white;
     }
     button {
       background: #18a0fb; color: white; border: none; border-radius: 4px;
@@ -162,7 +214,14 @@ const htmlContent = `
     .section { margin: 16px 0; padding: 12px; border: 1px solid #e0e0e0; border-radius: 4px; }
     .form-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
     input, textarea { flex: 1; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
-    textarea { font-family: Monaco, monospace; min-height: 80px; }
+    textarea {
+      font-family: Monaco, monospace;
+      min-height: 80px;
+      resize: none;
+      field-sizing: content;
+      min-height: 0px;
+      height: auto;
+    }
   </style>
 </head>
 <body>
@@ -178,7 +237,7 @@ const htmlContent = `
     let currentStyles = null;
     let fontAliases = {};
     let settings = { 
-      template: '+text($size(rem), $weight, $family)\\nletter-spacing: $spacing(em)\\nline-height: $lineHeight(%)',
+      template: '+text($size(rem), $weight, $family)\\nletter-spacing: $spacing(em)\\nline-height: $lineHeight',
       basePixelSize: 16
     };
     
@@ -190,11 +249,13 @@ const htmlContent = `
       if (!currentStyles) return;
       currentSassCode = applyTemplate(settings.template, currentStyles, fontAliases);
       const codeBlock = document.querySelector('.code-block');
-      if (codeBlock) codeBlock.textContent = currentSassCode;
+      if (codeBlock) {
+        codeBlock.textContent = currentSassCode;
+      }
     }
     
     function parseTemplate(template) {
-      const regex = /\\$(size|weight|family|spacing|lineHeight)(?:\\(([^)]+)\\))?/g;
+      const regex = /\\$(size|weight|family|spacing|lineHeight|textAlign)(?:\\(([^)]+)\\))?/g;
       const variables = [];
       let match;
       while ((match = regex.exec(template)) !== null) {
@@ -229,6 +290,9 @@ const htmlContent = `
             break;
           case 'lineHeight':
             value = convertLineHeight(styles.lineHeight, unit);
+            break;
+          case 'textAlign':
+            value = styles.textAlign;
             break;
         }
         result = result.replace(fullMatch, value);
@@ -273,6 +337,28 @@ const htmlContent = `
       }
     }
     
+    function copyWithIcon(button) {
+      copyToClipboard();
+      
+      // アイコンを変更してフィードバック
+      button.classList.add('copied');
+      button.innerHTML = \`
+        <svg viewBox="0 0 24 24">
+          <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
+        </svg>
+      \`;
+      
+      // 2秒後に元に戻す
+      setTimeout(() => {
+        button.classList.remove('copied');
+        button.innerHTML = \`
+          <svg viewBox="0 0 24 24">
+            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+          </svg>
+        \`;
+      }, 2000);
+    }
+    
     function copyToClipboard() {
       const textarea = document.createElement('textarea');
       textarea.value = currentSassCode;
@@ -295,10 +381,13 @@ const htmlContent = `
       const aliasValue = fontAliases[currentStyles.fontFamily] || '';
       
       content.innerHTML = \`
-        <div class="code-block">\${currentSassCode}</div>
-        <div>
-          <button onclick="copyToClipboard()">Copy SASS Code</button>
-          <button onclick="parent.postMessage({ pluginMessage: { type: 'close' } }, '*')">Close</button>
+        <div class="code-container">
+          <div class="code-block">\${currentSassCode}</div>
+          <button class="copy-icon" onclick="copyWithIcon(this)" title="Copy to clipboard">
+            <svg viewBox="0 0 24 24">
+              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            </svg>
+          </button>
         </div>
         
         <div class="section">
@@ -324,24 +413,25 @@ const htmlContent = `
         </div>
         
         <div class="section">
-          <h3>Settings Template</h3>
+          <h3>Template</h3>
           <textarea id="templateInput" oninput="updateTemplate(this.value)" 
-                    style="width: 100%; min-height: 120px; font-family: Monaco, monospace; font-size: 12px; resize: vertical;">\${settings.template}</textarea>
+                    style="width: 100%; font-family: Monaco, monospace; font-size: 12px; resize: vertical;">\${settings.template}</textarea>
           <div style="font-size: 11px; color: #999; margin-top: 8px; line-height: 1.4;">
-            <strong>Variables:</strong> $size(unit), $weight, $family, $spacing(unit), $lineHeight(unit)<br>
+            <strong>Variables:</strong> $size(unit), $weight, $family, $spacing(unit), $lineHeight(unit), $textAlign<br>
             <strong>Units:</strong> px, rem, em, %, unitless<br>
-            <strong>Example:</strong> +text($size(px), $weight, $family) or font: $weight $size(rem) $family
+            <strong>Example:</strong> +text($size(px), $weight, $family) or text-align: $textAlign
           </div>
         </div>
         
         <div class="section">
           <h3>Extracted Styles</h3>
           <div style="font-size: 12px; color: #666;">
-            <div><strong>Font Size:</strong> \${currentStyles.fontSize}</div>
-            <div><strong>Font Weight:</strong> \${currentStyles.fontWeight}</div>
-            <div><strong>Font Family:</strong> \${currentStyles.fontFamily}</div>
-            <div><strong>Letter Spacing:</strong> \${currentStyles.letterSpacing}</div>
-            <div><strong>Line Height:</strong> \${currentStyles.lineHeight}</div>
+            <div><strong>$size:</strong> \${currentStyles.fontSize}</div>
+            <div><strong>$weight:</strong> \${currentStyles.fontWeight}</div>
+            <div><strong>$family:</strong> \${currentStyles.fontFamily}</div>
+            <div><strong>$spacing:</strong> \${currentStyles.letterSpacing}</div>
+            <div><strong>$lineHeight:</strong> \${currentStyles.lineHeight}</div>
+            <div><strong>$textAlign:</strong> \${currentStyles.textAlign}</div>
           </div>
         </div>
       \`;
@@ -394,17 +484,24 @@ const htmlContent = `
       }, '*');
       updateSassCode();
       updateAliasList();
+      // renderUI()を呼ばないことでフォーカスを維持
     }
     
+    let templateTimer;
     function updateTemplate(value) {
       settings.template = value;
       updateSassCode();
-      parent.postMessage({ 
-        pluginMessage: { 
-          type: 'save-settings',
-          settings: settings
-        } 
-      }, '*');
+      
+      // 500ms後に保存（連続入力時は保存を遅延）
+      clearTimeout(templateTimer);
+      templateTimer = setTimeout(() => {
+        parent.postMessage({ 
+          pluginMessage: { 
+            type: 'save-settings',
+            settings: settings
+          } 
+        }, '*');
+      }, 500);
     }
     
     function updateBasePixelSize(value) {
@@ -420,6 +517,7 @@ const htmlContent = `
             settings: settings
           } 
         }, '*');
+        // renderUI()を呼ばないことでフォーカスを維持
       }
     }
     
@@ -462,7 +560,16 @@ const htmlContent = `
       if (message.type === 'style-extracted') {
         currentStyles = message.styles;
         updateSassCode();
-        renderUI();
+        // テンプレートまたはエイリアス入力中はUIを再構築しない（Base Font Size変更は除外）
+        const templateInput = document.getElementById('templateInput');
+        const aliasInput = document.getElementById('aliasInput');
+        
+        const isInputActive = (templateInput && templateInput === document.activeElement) ||
+                             (aliasInput && aliasInput === document.activeElement);
+        
+        if (!isInputActive) {
+          renderUI();
+        }
       }
       
       if (message.type === 'aliases-loaded') {
@@ -496,8 +603,14 @@ figma.showUI(htmlContent, {
   title: "Text Style Exporter"
 });
 
-// 初期選択チェック
-checkCurrentSelection();
+// 設定を読み込んでから初期選択チェック
+async function initializePlugin() {
+  await loadSettings();
+  await loadAliases();
+  checkCurrentSelection();
+}
+
+initializePlugin();
 
 // 選択変更監視
 figma.on('selectionchange', () => {
