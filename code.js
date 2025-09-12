@@ -29,8 +29,11 @@ function getFontWeightString(weight) {
 }
 function letterSpacingToEm(letterSpacing) {
     if (letterSpacing.unit === 'PERCENT') {
-        return `${(letterSpacing.value / 100).toFixed(2)}em`;
+        const emValue = `${(letterSpacing.value / 100).toFixed(2)}em`;
+        console.log('[Plugin] letterSpacingToEm:', letterSpacing.value, '% ->', emValue);
+        return emValue;
     }
+    console.log('[Plugin] letterSpacingToEm: not PERCENT, returning 0em');
     return '0em';
 }
 function extractTextStyles(node, basePixelSize = 16) {
@@ -81,8 +84,10 @@ function extractTextStyles(node, basePixelSize = 16) {
     };
 }
 function checkCurrentSelection() {
+    console.log('[Plugin] checkCurrentSelection called');
     const selection = figma.currentPage.selection;
     if (selection.length === 0) {
+        console.log('[Plugin] No selection found');
         figma.ui.postMessage({
             type: 'no-selection',
             message: 'Please select a text element'
@@ -91,6 +96,7 @@ function checkCurrentSelection() {
     }
     const textNodes = selection.filter(node => node.type === 'TEXT');
     if (textNodes.length === 0) {
+        console.log('[Plugin] No text nodes found');
         figma.ui.postMessage({
             type: 'no-text',
             message: 'Please select a text element'
@@ -99,6 +105,7 @@ function checkCurrentSelection() {
     }
     const textNode = textNodes[0];
     const styles = extractTextStyles(textNode, pluginSettings.basePixelSize);
+    console.log('[Plugin] Text styles extracted:', styles);
     figma.ui.postMessage({
         type: 'style-extracted',
         styles: styles
@@ -108,7 +115,8 @@ function checkCurrentSelection() {
 let pluginAliases = {};
 let pluginSettings = {
     template: '+text($size(rem), $weight, $family)\nletter-spacing: $spacing(em)\nline-height: $lineHeight',
-    basePixelSize: 16
+    basePixelSize: 16,
+    skipZeroLetterSpacing: true
 };
 // ストレージ操作
 function loadAliases() {
@@ -180,7 +188,7 @@ const htmlContent = `
     .code-block {
       background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px;
       font-family: Monaco, monospace; font-size: 12px; white-space: pre; overflow-x: auto;
-      min-height: 60px;
+      min-height: 60px; cursor: text; user-select: text; 
     }
     .copy-icon {
       position: absolute;
@@ -249,7 +257,8 @@ const htmlContent = `
     let fontAliases = {};
     let settings = { 
       template: '+text($size(rem), $weight, $family)\\nletter-spacing: $spacing(em)\\nline-height: $lineHeight',
-      basePixelSize: 16
+      basePixelSize: 16,
+      skipZeroLetterSpacing: true
     };
     
     parent.postMessage({ pluginMessage: { type: 'ui-ready' } }, '*');
@@ -257,8 +266,10 @@ const htmlContent = `
     parent.postMessage({ pluginMessage: { type: 'get-settings' } }, '*');
     
     function updateSassCode() {
+      console.log('[UI] updateSassCode called, currentStyles:', !!currentStyles);
       if (!currentStyles) return;
       currentSassCode = applyTemplate(settings.template, currentStyles, fontAliases);
+      console.log('[UI] SASS code generated:', currentSassCode);
       const codeBlock = document.querySelector('.code-block');
       if (codeBlock) {
         codeBlock.textContent = currentSassCode;
@@ -298,6 +309,23 @@ const htmlContent = `
             break;
           case 'spacing':
             value = convertLetterSpacing(styles.letterSpacing, unit);
+            // letter-spacing 0値省略機能（数値で比較）
+            const numericValue = parseFloat(styles.letterSpacing.replace('em', ''));
+            console.log('[UI] letter-spacing debug:', {
+              rawValue: styles.letterSpacing,
+              convertedValue: value,
+              numericValue: numericValue,
+              skipZeroLetterSpacing: settings.skipZeroLetterSpacing,
+              shouldSkip: settings.skipZeroLetterSpacing && numericValue === 0
+            });
+            
+            if (settings.skipZeroLetterSpacing && numericValue === 0) {
+              console.log('[UI] Skipping letter-spacing line');
+              // 該当行全体を削除（改行も含む）
+              const lineRegex = new RegExp('letter-spacing: \\\\$spacing\\\\([^)]*\\\\)[^\\\\n]*\\\\n?', 'g');
+              result = result.replace(lineRegex, '');
+              return; // 通常の置換をスキップ
+            }
             break;
           case 'lineHeight':
             value = convertLineHeight(styles.lineHeight, unit);
@@ -348,38 +376,103 @@ const htmlContent = `
       }
     }
     
-    function copyWithIcon(button) {
-      copyToClipboard();
-      
-      // アイコンを変更してフィードバック
-      button.classList.add('copied');
-      button.innerHTML = \`
-        <svg viewBox="0 0 24 24">
-          <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
-        </svg>
-      \`;
-      
-      // 2秒後に元に戻す
-      setTimeout(() => {
-        button.classList.remove('copied');
+    async function copyWithIcon(button) {
+      console.log('[UI] copyWithIcon called');
+      try {
+        await copyToClipboard();
+        
+        // アイコンを変更してフィードバック
+        button.classList.add('copied');
         button.innerHTML = \`
           <svg viewBox="0 0 24 24">
-            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
           </svg>
         \`;
-      }, 2000);
+        
+        // 2秒後に元に戻す
+        setTimeout(() => {
+          button.classList.remove('copied');
+          button.innerHTML = \`
+            <svg viewBox="0 0 24 24">
+              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            </svg>
+          \`;
+        }, 2000);
+      } catch (err) {
+        console.error('[UI] copyWithIcon error:', err);
+      }
     }
     
-    function copyToClipboard() {
-      const textarea = document.createElement('textarea');
-      textarea.value = currentSassCode;
-      textarea.style.position = 'absolute';
-      textarea.style.left = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      parent.postMessage({ pluginMessage: { type: 'copy-success' } }, '*');
+    async function copyToClipboard() {
+      console.log('[UI] copyToClipboard called, currentSassCode:', currentSassCode);
+      
+      if (!currentSassCode) {
+        console.error('[UI] No SASS code to copy');
+        return;
+      }
+      
+      // 方法1: 現代的なClipboard APIを試行
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(currentSassCode);
+          console.log('[UI] Clipboard API copy successful');
+          parent.postMessage({ pluginMessage: { type: 'copy-success' } }, '*');
+          return;
+        }
+      } catch (err) {
+        console.warn('[UI] Clipboard API failed:', err);
+      }
+      
+      // 方法2: execCommandでコピー試行
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = currentSassCode;
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '0';
+        textarea.style.width = '1px';
+        textarea.style.height = '1px';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        textarea.setAttribute('readonly', '');
+        textarea.setAttribute('tabindex', '-1');
+        document.body.appendChild(textarea);
+        
+        // スクロールを引き起こさないfocus
+        textarea.focus({ preventScroll: true });
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        
+        const success = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        
+        console.log('[UI] execCommand copy result:', success);
+        
+        if (success) {
+          parent.postMessage({ pluginMessage: { type: 'copy-success' } }, '*');
+          return;
+        }
+      } catch (err) {
+        console.warn('[UI] execCommand copy failed:', err);
+      }
+      
+      // 方法3: コードブロックを自動選択してユーザーにコピーを促す
+      try {
+        const codeBlock = document.querySelector('.code-block');
+        if (codeBlock) {
+          // コードブロック全体を選択
+          const range = document.createRange();
+          range.selectNodeContents(codeBlock);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          
+          console.log('[UI] Code block selected for user copy - press Ctrl+C/Cmd+C');
+          parent.postMessage({ pluginMessage: { type: 'copy-success' } }, '*');
+        }
+      } catch (err) {
+        console.error('[UI] All copy methods failed:', err);
+      }
     }
     
     function renderUI() {
@@ -394,7 +487,7 @@ const htmlContent = `
       content.innerHTML = \`
         <div class="code-container">
           <div class="code-block">\${currentSassCode}</div>
-          <button class="copy-icon" onclick="copyWithIcon(this)" title="Copy to clipboard">
+          <button class="copy-icon" onclick="console.log('[UI] Copy button clicked'); copyWithIcon(this)" title="Copy to clipboard">
             <svg viewBox="0 0 24 24">
               <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
             </svg>
@@ -420,6 +513,14 @@ const htmlContent = `
                    placeholder="16" min="1" max="100"
                    oninput="updateBasePixelSize(this.value)">
             <span style="font-size: 12px; color: #666;">px (1rem = ?px)</span>
+          </div>
+          <div class="form-row">
+            <label>
+              <input type="checkbox" id="skipZeroLetterSpacingInput" 
+                     \${settings.skipZeroLetterSpacing ? 'checked' : ''}
+                     onchange="updateSkipZeroLetterSpacing(this.checked)">
+              Skip letter-spacing: 0
+            </label>
           </div>
         </div>
         
@@ -532,6 +633,18 @@ const htmlContent = `
       }
     }
     
+    function updateSkipZeroLetterSpacing(checked) {
+      settings.skipZeroLetterSpacing = checked;
+      updateSassCode();
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: 'save-settings',
+          settings: settings
+        } 
+      }, '*');
+    }
+    
+    
     function addNewAlias() {
       const fontInput = document.getElementById('newFontInput');
       const aliasInput = document.getElementById('newAliasInput');
@@ -559,16 +672,18 @@ const htmlContent = `
     }
     
     window.onmessage = function(event) {
-      console.log('Message received:', event.data);
+      console.log('[UI] Message received:', event.data);
       const message = event.data.pluginMessage;
       
       if (message.type === 'no-selection' || message.type === 'no-text') {
+        console.log('[UI] No valid selection');
         currentStyles = null;
         renderUI();
         return;
       }
       
       if (message.type === 'style-extracted') {
+        console.log('[UI] Style extracted:', message.styles);
         currentStyles = message.styles;
         updateSassCode();
         // テンプレートまたはエイリアス入力中はUIを再構築しない（Base Font Size変更は除外）
@@ -584,6 +699,7 @@ const htmlContent = `
       }
       
       if (message.type === 'aliases-loaded') {
+        console.log('[UI] Aliases loaded:', message.aliases);
         fontAliases = message.aliases || {};
         if (currentStyles) {
           updateSassCode();
@@ -592,7 +708,9 @@ const htmlContent = `
       }
       
       if (message.type === 'settings-loaded') {
+        console.log('[UI] Settings loaded:', message.settings);
         settings = message.settings || settings;
+        console.log('[UI] Current settings after load:', settings);
         if (currentStyles) {
           updateSassCode();
           renderUI();
@@ -614,9 +732,16 @@ figma.showUI(htmlContent, {
 // 設定を読み込んでから初期選択チェック
 function initializePlugin() {
     return __awaiter(this, void 0, void 0, function* () {
+        console.log('[Plugin] Initializing plugin...');
         yield loadSettings();
+        console.log('[Plugin] Settings loaded:', pluginSettings);
         yield loadAliases();
-        checkCurrentSelection();
+        console.log('[Plugin] Aliases loaded:', pluginAliases);
+        // UI側の準備が整うまで少し待機
+        setTimeout(() => {
+            console.log('[Plugin] Starting initial selection check');
+            checkCurrentSelection();
+        }, 200);
     });
 }
 initializePlugin();
