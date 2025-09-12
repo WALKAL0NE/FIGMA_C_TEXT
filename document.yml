@@ -12,7 +12,7 @@ tech_stack:
   language: 
     source: "TypeScript"
     compiled: "JavaScript"
-  ui: "外部HTMLファイル"
+  ui: "インラインHTML (code.ts内に埋め込み)"
   build_tool: "TypeScript Compiler (tsc)"
 
 # ファイル構成
@@ -28,11 +28,23 @@ file_structure:
     - name: "code.js"
       description: "コンパイル済みJavaScript"
       type: "compiled"
+    - name: "index.ts"
+      description: "Bun動作テスト用ファイル"
+      type: "test"
     - name: "ui.html"
-      description: "メインUIファイル"
-      type: "ui"
+      description: "外部UIファイル（未使用）"
+      type: "unused"
     - name: "ui-simple.html"
       description: "テスト用簡易UI"
+      type: "test"
+    - name: "ui-test.html"
+      description: "UIテスト用ファイル"
+      type: "test"
+    - name: "ui-debug.html"
+      description: "デバッグ用UIファイル"
+      type: "test"
+    - name: "ui-minimal.html"
+      description: "最小限UIファイル"
       type: "test"
     - name: "package.json"
       description: "Bunパッケージ設定"
@@ -73,6 +85,9 @@ features:
       line_height:
         source: "PERCENT/PIXELS unit"
         output: "unitless ratio"
+      text_align:
+        source: "CENTER/RIGHT/JUSTIFIED/LEFT"
+        output: "center/right/justify/left"
 
   # SASS出力システム
   sass_output:
@@ -98,6 +113,9 @@ features:
       - name: "$lineHeight(unit)"
         description: "行高"
         units: ["%", "unitless", "px"]
+      - name: "$textAlign"
+        description: "テキスト配置"
+        units: ["string"]
 
   # 単位変換システム
   unit_conversion:
@@ -140,22 +158,29 @@ features:
       - name: "template"
         type: "string"
         description: "SASSテンプレート文字列"
+      - name: "basePixelSize"
+        type: "number"
+        description: "remの基準フォントサイズ（px）"
+        default: 16
     ui_components:
       - "テキストエリア（テンプレート編集）"
+      - "数値入力（Base Font Size）"
       - "変数ヘルプテキスト"
-    persistence: "自動保存"
+    persistence: "自動保存（500ms遅延）"
 
   # UI機能
   ui_features:
     copy_function:
       description: "SASSコードをクリップボードにコピー"
-      fallback: "テキスト選択状態にする"
+      fallback: "document.execCommand('copy') を使用"
+      icon_feedback: "コピー成功時にチェックマークに変化"
     real_time_update:
-      trigger: "テキスト選択時"
-      behavior: "自動更新"
+      trigger: "テキスト選択変更時"
+      behavior: "自動更新（入力中は除外）"
     notifications:
       copy_success: "Figmaトースト通知"
-    close_function: "プラグイン終了"
+    extracted_styles_display: "抽出された全スタイル値をセクションに表示"
+    input_focus_preservation: "入力中はUI再構築を回避"
 
 # プラグイン設定
 plugin_config:
@@ -164,7 +189,7 @@ plugin_config:
     id: "1547924564727075297"
     api_version: "1.0.0"
     main_file: "code.js"
-    ui_file: "ui-simple.html"  # 現在テスト中
+    ui_embedded: "code.ts内にインライン実装"
     document_access: "dynamic-page"
     network_access:
       allowed_domains: ["none"]
@@ -233,22 +258,25 @@ messaging:
     - type: "close"
       description: "プラグイン終了要求"
 
-# 現在の課題
-issues:
-  high_priority:
+# 現在の課題・注意点
+notes:
+  resolved_issues:
     - description: "UI表示問題"
-      detail: "HTMLファイルが正しく読み込まれていない"
-      status: "ui-simple.htmlでテスト中"
-    
-  medium_priority:
-    - description: "権限警告"
-      detail: "camera, microphone, clipboard-write等の警告"
-      status: "meta Permissions-Policy追加済み"
+      solution: "インラインHTML実装で解決"
+      status: "完了"
   
-  low_priority:
-    - description: "権限エラー表示"
-      detail: "Figmaブラウザ環境の一般的な警告"
-      status: "動作に影響なし"
+  known_limitations:
+    - description: "クリップボードアクセス"
+      detail: "document.execCommand('copy')をフォールバックとして使用"
+      impact: "軽微"
+    - description: "ブラウザ権限警告"
+      detail: "Figma開発環境での一般的な警告"
+      impact: "動作に影響なし"
+  
+  implementation_notes:
+    - "UIとメインロジックが単一ファイルに統合されている"
+    - "設定とエイリアスはFigma clientStorageで永続化"
+    - "テンプレートシステムで柔軟なSASS出力が可能"
 
 # 開発環境
 development:
@@ -257,12 +285,28 @@ development:
   platform: "darwin (macOS)"
   os_version: "Darwin 24.1.0"
   
-# テスト状況
-testing:
-  current_test_file: "ui-simple.html"
-  test_purpose: "基本UI読み込みテスト"
-  expected_results:
-    - "Simple UI Test タイトル表示"
-    - "Test Button ボタン表示"
-    - "コンソールに 'Simple UI script loaded' 表示"
-    - "ボタンクリックでアラート表示"
+# ファイル用途分析
+file_usage:
+  active_files:
+    - "code.ts (メインソースコード)"
+    - "code.js (コンパイル済み実行ファイル)"
+    - "manifest.json (プラグイン設定)"
+    - "package.json (ビルド設定)"
+    - "tsconfig.json (TypeScript設定)"
+    - "CLAUDE.md (プロジェクト文書)"
+  
+  test_files:
+    - "index.ts (Bun動作確認用)"
+    - "ui-*.html (UI検証用・各種テストファイル)"
+  
+  unused_files:
+    - "ui.html (外部UI、現在は未使用)"
+  
+  removable_files:
+    description: "テスト完了後に削除可能"
+    candidates:
+      - "ui-simple.html"
+      - "ui-test.html" 
+      - "ui-debug.html"
+      - "ui-minimal.html"
+      - "index.ts"
