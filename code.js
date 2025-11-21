@@ -118,14 +118,29 @@ let pluginSettings = {
     basePixelSize: 16,
     skipZeroLetterSpacing: true
 };
-// ストレージ操作
+// ストレージスコープ管理
+let storageScope = 'file'; // デフォルトはファイル固有
+// ストレージ操作（2層構造: ファイル固有 → デバイス共通）
 function loadAliases() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
+            // 優先1: ファイル固有の設定
+            const fileSpecific = figma.root.getPluginData('fontAliases');
+            if (fileSpecific) {
+                pluginAliases = JSON.parse(fileSpecific);
+                storageScope = 'file';
+                console.log('[Plugin] Loaded file-specific aliases:', pluginAliases);
+                return;
+            }
+            // 優先2: デバイス共通のデフォルト設定
             const saved = yield figma.clientStorage.getAsync('fontAliases');
             if (saved) {
                 pluginAliases = saved;
+                storageScope = 'global';
+                console.log('[Plugin] Loaded global aliases:', pluginAliases);
+                return;
             }
+            console.log('[Plugin] No aliases found, using empty object');
         }
         catch (err) {
             console.error('Failed to load aliases:', err);
@@ -133,9 +148,19 @@ function loadAliases() {
     });
 }
 function saveAliases() {
-    return __awaiter(this, void 0, void 0, function* () {
+    return __awaiter(this, arguments, void 0, function* (scope = storageScope) {
         try {
-            yield figma.clientStorage.setAsync('fontAliases', pluginAliases);
+            if (scope === 'file') {
+                // ファイル固有に保存
+                figma.root.setPluginData('fontAliases', JSON.stringify(pluginAliases));
+                console.log('[Plugin] Saved to file-specific storage');
+            }
+            else {
+                // デバイス共通に保存
+                yield figma.clientStorage.setAsync('fontAliases', pluginAliases);
+                console.log('[Plugin] Saved to global storage');
+            }
+            storageScope = scope;
         }
         catch (err) {
             console.error('Failed to save aliases:', err);
@@ -145,10 +170,21 @@ function saveAliases() {
 function loadSettings() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
+            // 優先1: ファイル固有の設定
+            const fileSpecific = figma.root.getPluginData('pluginSettings');
+            if (fileSpecific) {
+                pluginSettings = JSON.parse(fileSpecific);
+                console.log('[Plugin] Loaded file-specific settings:', pluginSettings);
+                return;
+            }
+            // 優先2: デバイス共通のデフォルト設定
             const saved = yield figma.clientStorage.getAsync('pluginSettings');
             if (saved) {
                 pluginSettings = saved;
+                console.log('[Plugin] Loaded global settings:', pluginSettings);
+                return;
             }
+            console.log('[Plugin] No settings found, using defaults');
         }
         catch (err) {
             console.error('Failed to load settings:', err);
@@ -156,9 +192,18 @@ function loadSettings() {
     });
 }
 function saveSettings() {
-    return __awaiter(this, void 0, void 0, function* () {
+    return __awaiter(this, arguments, void 0, function* (scope = storageScope) {
         try {
-            yield figma.clientStorage.setAsync('pluginSettings', pluginSettings);
+            if (scope === 'file') {
+                // ファイル固有に保存
+                figma.root.setPluginData('pluginSettings', JSON.stringify(pluginSettings));
+                console.log('[Plugin] Saved to file-specific storage');
+            }
+            else {
+                // デバイス共通に保存
+                yield figma.clientStorage.setAsync('pluginSettings', pluginSettings);
+                console.log('[Plugin] Saved to global storage');
+            }
         }
         catch (err) {
             console.error('Failed to save settings:', err);
@@ -251,16 +296,17 @@ const htmlContent = `
   
   <script>
     console.log('UI Script loaded');
-    
+
     let currentSassCode = '';
     let currentStyles = null;
     let fontAliases = {};
-    let settings = { 
+    let settings = {
       template: '+text($size(rem), $weight, $family)\\nletter-spacing: $spacing(em)\\nline-height: $lineHeight',
       basePixelSize: 16,
       skipZeroLetterSpacing: true
     };
-    
+    let storageScope = 'file'; // 'file' or 'global'
+
     parent.postMessage({ pluginMessage: { type: 'ui-ready' } }, '*');
     parent.postMessage({ pluginMessage: { type: 'get-aliases' } }, '*');
     parent.postMessage({ pluginMessage: { type: 'get-settings' } }, '*');
@@ -302,7 +348,7 @@ const htmlContent = `
             value = convertFontSize(styles.fontSize, unit);
             break;
           case 'weight':
-            value = styles.fontWeight;
+            value = convertFontWeight(styles.fontWeight, unit);
             break;
           case 'family':
             value = fontFamily;
@@ -344,7 +390,7 @@ const htmlContent = `
       const remValue = parseFloat(value.replace('rem', ''));
       console.log('convertFontSize:', value, 'unit:', unit, 'basePixelSize:', settings.basePixelSize);
       switch (unit) {
-        case 'px': 
+        case 'px':
           const pxValue = (remValue * settings.basePixelSize).toFixed(0) + 'px';
           console.log('converted to px:', pxValue);
           return pxValue;
@@ -353,7 +399,33 @@ const htmlContent = `
         default: return value;
       }
     }
-    
+
+    function convertFontWeight(value, unit) {
+      // valueは既に名前形式 (e.g., 'bold', 'normal')
+      // 元の数値が必要な場合は逆マッピング
+      const nameToNum = {
+        'thin': 100,
+        'extralight': 200,
+        'light': 300,
+        'normal': 400,
+        'medium': 500,
+        'semibold': 600,
+        'bold': 700,
+        'extrabold': 800,
+        'black': 900
+      };
+
+      switch (unit) {
+        case 'num':
+        case 'number':
+          return nameToNum[value] || 400;
+        case 'name':
+        case 'default':
+        default:
+          return value;
+      }
+    }
+
     function convertLetterSpacing(value, unit) {
       const emValue = parseFloat(value.replace('em', ''));
       switch (unit) {
@@ -509,18 +581,29 @@ const htmlContent = `
           <h3>Settings</h3>
           <div class="form-row">
             <label>Base Font Size:</label>
-            <input type="number" id="basePixelInput" value="\${settings.basePixelSize}" 
+            <input type="number" id="basePixelInput" value="\${settings.basePixelSize}"
                    placeholder="16" min="1" max="100"
                    oninput="updateBasePixelSize(this.value)">
             <span style="font-size: 12px; color: #666;">px (1rem = ?px)</span>
           </div>
           <div class="form-row">
             <label>
-              <input type="checkbox" id="skipZeroLetterSpacingInput" 
+              <input type="checkbox" id="skipZeroLetterSpacingInput"
                      \${settings.skipZeroLetterSpacing ? 'checked' : ''}
                      onchange="updateSkipZeroLetterSpacing(this.checked)">
               Skip letter-spacing: 0
             </label>
+          </div>
+          <div class="form-row">
+            <label>Storage Scope:</label>
+            <select id="storageScopeSelect" onchange="changeStorageScope(this.value)"
+                    style="flex: 1; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+              <option value="file" \${storageScope === 'file' ? 'selected' : ''}>💡 This file only</option>
+              <option value="global" \${storageScope === 'global' ? 'selected' : ''}>📁 All files (default)</option>
+            </select>
+          </div>
+          <div data-storage-desc style="font-size: 10px; color: #999; margin-top: 4px; line-height: 1.3; padding-left: 0;">
+            \${storageScope === 'file' ? '💡 Settings saved with this Figma file' : '📁 Settings shared across all your files on this device'}
           </div>
         </div>
         
@@ -529,9 +612,13 @@ const htmlContent = `
           <textarea id="templateInput" oninput="updateTemplate(this.value)" 
                     style="width: 100%; font-family: Monaco, monospace; font-size: 12px; resize: vertical;">\${settings.template}</textarea>
           <div style="font-size: 11px; color: #999; margin-top: 8px; line-height: 1.4;">
-            <strong>Variables:</strong> $size(unit), $weight, $family, $spacing(unit), $lineHeight(unit), $textAlign<br>
-            <strong>Units:</strong> px, rem, em, %, unitless<br>
-            <strong>Example:</strong> +text($size(px), $weight, $family) or text-align: $textAlign
+            <strong>Variables:</strong> $size(unit), $weight(unit), $family, $spacing(unit), $lineHeight(unit), $textAlign<br>
+            <strong>Units:</strong><br>
+            • size: px, rem, unitless<br>
+            • weight: num, name (default)<br>
+            • spacing: em, px, %, unitless<br>
+            • lineHeight: %, unitless<br>
+            <strong>Example:</strong> +text($size(rem), $weight(num), $family) or font-weight: $weight(num)
           </div>
         </div>
         
@@ -570,16 +657,17 @@ const htmlContent = `
     
     function removeAlias(font) {
       delete fontAliases[font];
-      parent.postMessage({ 
-        pluginMessage: { 
+      parent.postMessage({
+        pluginMessage: {
           type: 'save-aliases',
-          aliases: fontAliases
-        } 
+          aliases: fontAliases,
+          scope: storageScope
+        }
       }, '*');
       updateSassCode();
       updateAliasList();
     }
-    
+
     function updateAlias(value) {
       const trimmedValue = value.trim();
       if (trimmedValue) {
@@ -587,12 +675,13 @@ const htmlContent = `
       } else {
         delete fontAliases[currentStyles.fontFamily];
       }
-      
-      parent.postMessage({ 
-        pluginMessage: { 
+
+      parent.postMessage({
+        pluginMessage: {
           type: 'save-aliases',
-          aliases: fontAliases
-        } 
+          aliases: fontAliases,
+          scope: storageScope
+        }
       }, '*');
       updateSassCode();
       updateAliasList();
@@ -603,19 +692,20 @@ const htmlContent = `
     function updateTemplate(value) {
       settings.template = value;
       updateSassCode();
-      
+
       // 500ms後に保存（連続入力時は保存を遅延）
       clearTimeout(templateTimer);
       templateTimer = setTimeout(() => {
-        parent.postMessage({ 
-          pluginMessage: { 
+        parent.postMessage({
+          pluginMessage: {
             type: 'save-settings',
-            settings: settings
-          } 
+            settings: settings,
+            scope: storageScope
+          }
         }, '*');
       }, 500);
     }
-    
+
     function updateBasePixelSize(value) {
       const numValue = parseInt(value);
       console.log('updateBasePixelSize called with:', value, 'parsed:', numValue);
@@ -623,25 +713,49 @@ const htmlContent = `
         settings.basePixelSize = numValue;
         console.log('settings.basePixelSize updated to:', settings.basePixelSize);
         updateSassCode();
-        parent.postMessage({ 
-          pluginMessage: { 
+        parent.postMessage({
+          pluginMessage: {
             type: 'save-settings',
-            settings: settings
-          } 
+            settings: settings,
+            scope: storageScope
+          }
         }, '*');
         // renderUI()を呼ばないことでフォーカスを維持
       }
     }
-    
+
     function updateSkipZeroLetterSpacing(checked) {
       settings.skipZeroLetterSpacing = checked;
       updateSassCode();
-      parent.postMessage({ 
-        pluginMessage: { 
+      parent.postMessage({
+        pluginMessage: {
           type: 'save-settings',
-          settings: settings
-        } 
+          settings: settings,
+          scope: storageScope
+        }
       }, '*');
+    }
+
+    function changeStorageScope(newScope) {
+      storageScope = newScope;
+      parent.postMessage({
+        pluginMessage: {
+          type: 'change-storage-scope',
+          scope: newScope
+        }
+      }, '*');
+      // 説明文を更新
+      updateStorageScopeDescription();
+    }
+
+    function updateStorageScopeDescription() {
+      const descText = storageScope === 'file'
+        ? '💡 Settings saved with this Figma file'
+        : '📁 Settings shared across all your files on this device';
+      const descElements = document.querySelectorAll('[data-storage-desc]');
+      descElements.forEach(el => {
+        el.textContent = descText;
+      });
     }
     
     
@@ -701,20 +815,27 @@ const htmlContent = `
       if (message.type === 'aliases-loaded') {
         console.log('[UI] Aliases loaded:', message.aliases);
         fontAliases = message.aliases || {};
+        storageScope = message.storageScope || 'file';
         if (currentStyles) {
           updateSassCode();
           renderUI();
         }
       }
-      
+
       if (message.type === 'settings-loaded') {
         console.log('[UI] Settings loaded:', message.settings);
         settings = message.settings || settings;
+        storageScope = message.storageScope || 'file';
         console.log('[UI] Current settings after load:', settings);
         if (currentStyles) {
           updateSassCode();
           renderUI();
         }
+      }
+
+      if (message.type === 'scope-changed') {
+        console.log('[UI] Storage scope changed to:', message.scope);
+        storageScope = message.scope;
       }
     };
   </script>
@@ -765,25 +886,39 @@ figma.ui.onmessage = (msg) => __awaiter(void 0, void 0, void 0, function* () {
         yield loadAliases();
         figma.ui.postMessage({
             type: 'aliases-loaded',
-            aliases: pluginAliases
+            aliases: pluginAliases,
+            storageScope: storageScope
         });
     }
     if (msg.type === 'save-aliases') {
         pluginAliases = msg.aliases;
-        yield saveAliases();
+        yield saveAliases(msg.scope || storageScope);
     }
     if (msg.type === 'get-settings') {
         yield loadSettings();
         figma.ui.postMessage({
             type: 'settings-loaded',
-            settings: pluginSettings
+            settings: pluginSettings,
+            storageScope: storageScope
         });
     }
     if (msg.type === 'save-settings') {
         pluginSettings = msg.settings;
-        yield saveSettings();
+        yield saveSettings(msg.scope || storageScope);
         // 設定変更時に選択中のテキストを再計算
         checkCurrentSelection();
+    }
+    if (msg.type === 'change-storage-scope') {
+        const newScope = msg.scope;
+        // 現在のスコープから新しいスコープにデータをコピー
+        yield saveAliases(newScope);
+        yield saveSettings(newScope);
+        storageScope = newScope;
+        figma.ui.postMessage({
+            type: 'scope-changed',
+            scope: newScope
+        });
+        figma.notify(`Storage scope changed to ${newScope === 'file' ? 'This file only' : 'All files'}`);
     }
 });
 console.log('Plugin initialized');
