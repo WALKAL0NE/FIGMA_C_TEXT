@@ -36,46 +36,91 @@ async function calculateAutoLineHeight(node: TextNode): Promise<number> {
   const fontSize = node.fontSize as number;
   const originalText = node.characters;
   
-  // 改行を含むかチェック
-  const hasLineBreaks = originalText.includes('\n');
-  
-  if (hasLineBreaks) {
-    // Missing fontチェック
-    if (node.hasMissingFont) {
-      console.log('[Plugin] Missing font detected, using default line-height');
-      return 1.2; // デフォルト値
-    }
-    
-    // フォントを読み込み
-    const fontName = node.fontName;
-    if (fontName === figma.mixed) {
-      // 複数フォントの場合は最初の文字のフォントを使用
-      const firstCharFont = node.getRangeFontName(0, 1) as FontName;
-      await figma.loadFontAsync(firstCharFont);
-    } else {
-      await figma.loadFontAsync(fontName as FontName);
-    }
-    
-    // 改行を削除して一行に
-    const singleLineText = originalText.replace(/\n/g, '');
-    node.characters = singleLineText;
-    
-    // 高さを取得（一行分の高さ）
-    const singleLineHeight = node.height;
-    
-    // 元に戻す
-    node.characters = originalText;
-    
-    // line-height = 一行の高さ / フォントサイズ
-    const calculatedLineHeight = singleLineHeight / fontSize;
-    console.log('[Plugin] Calculated auto line-height (multi-line):', calculatedLineHeight);
-    return calculatedLineHeight;
-  } else {
-    // 一行の場合はそのまま計算
-    const calculatedLineHeight = node.height / fontSize;
-    console.log('[Plugin] Calculated auto line-height (single-line):', calculatedLineHeight);
-    return calculatedLineHeight;
+  // Missing fontチェック
+  if (node.hasMissingFont) {
+    console.log('[Plugin] Missing font detected, using default line-height');
+    return 1.2; // デフォルト値
   }
+  
+  // フォントを読み込み
+  const fontName = node.fontName;
+  if (fontName === figma.mixed) {
+    const firstCharFont = node.getRangeFontName(0, 1) as FontName;
+    await figma.loadFontAsync(firstCharFont);
+  } else {
+    await figma.loadFontAsync(fontName as FontName);
+  }
+  
+  // 元の状態を保存
+  const originalParent = node.parent;
+  const originalIndex = originalParent && 'children' in originalParent 
+    ? (originalParent as ChildrenMixin).children.indexOf(node) 
+    : 0;
+  const originalLeadingTrim = node.leadingTrim;
+  const originalAutoResize = node.textAutoResize;
+  const originalWidth = node.width;
+  const originalHeight = node.height;
+  const originalX = node.x;
+  const originalY = node.y;
+  const hasVerticalTrim = originalLeadingTrim !== figma.mixed && originalLeadingTrim === 'CAP_HEIGHT';
+  
+  // 一時的にページ直下に移動（Auto Layout制約を解除）
+  const page = figma.currentPage;
+  page.appendChild(node);
+  
+  // 上下トリミングを一時解除
+  if (hasVerticalTrim) {
+    node.leadingTrim = 'NONE';
+  }
+  
+  // テキストボックスを自動サイズに変更して一行にする
+  node.textAutoResize = 'WIDTH_AND_HEIGHT';
+  
+  // 改行コードも削除
+  const hasExplicitLineBreaks = originalText.includes('\n');
+  if (hasExplicitLineBreaks) {
+    node.characters = originalText.replace(/\n/g, '');
+  }
+  
+  // 高さを取得（一行の状態）
+  const singleLineHeight = node.height;
+  
+  // === 元に戻す（順序が重要）===
+  
+  // 1. まずテキストを元に戻す
+  if (hasExplicitLineBreaks) {
+    node.characters = originalText;
+  }
+  
+  // 2. textAutoResizeを元に戻す
+  node.textAutoResize = originalAutoResize;
+  
+  // 3. 幅を固定に戻す場合はリサイズ（HEIGHT固定モードの場合）
+  if (originalAutoResize === 'HEIGHT') {
+    node.resize(originalWidth, node.height);
+  } else if (originalAutoResize === 'NONE') {
+    node.resize(originalWidth, originalHeight);
+  }
+  
+  // 4. トリミングを元に戻す
+  if (hasVerticalTrim) {
+    node.leadingTrim = originalLeadingTrim;
+  }
+  
+  // 5. 元の親に戻す
+  if (originalParent && 'insertChild' in originalParent) {
+    (originalParent as ChildrenMixin).insertChild(originalIndex, node);
+  }
+  
+  // 6. 位置を元に戻す
+  node.x = originalX;
+  node.y = originalY;
+  
+  // line-height = 一行の高さ / フォントサイズ
+  const calculatedLineHeight = singleLineHeight / fontSize;
+  console.log('[Plugin] Calculated auto line-height:', calculatedLineHeight, 
+              '(singleLineHeight:', singleLineHeight, ', fontSize:', fontSize, ')');
+  return calculatedLineHeight;
 }
 
 async function extractTextStyles(node: TextNode, basePixelSize: number = 16): Promise<any> {
