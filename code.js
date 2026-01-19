@@ -36,79 +36,130 @@ function letterSpacingToEm(letterSpacing) {
     console.log('[Plugin] letterSpacingToEm: not PERCENT, returning 0em');
     return '0em';
 }
-function extractTextStyles(node, basePixelSize = 16) {
-    const fontSize = node.fontSize;
-    const fontWeight = node.fontWeight;
-    const fontFamily = node.fontName;
-    const letterSpacing = node.letterSpacing;
-    const lineHeight = node.lineHeight;
-    const textAlign = node.textAlignHorizontal;
-    let lineHeightValue = 1;
-    if (lineHeight && lineHeight !== figma.mixed) {
-        const lineHeightObj = lineHeight;
-        if ('value' in lineHeightObj && 'unit' in lineHeightObj) {
-            if (lineHeightObj.unit === 'PERCENT') {
-                lineHeightValue = lineHeightObj.value / 100;
+// Auto line-heightの実際の値を計算
+function calculateAutoLineHeight(node) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const fontSize = node.fontSize;
+        const originalText = node.characters;
+        // 改行を含むかチェック
+        const hasLineBreaks = originalText.includes('\n');
+        if (hasLineBreaks) {
+            // Missing fontチェック
+            if (node.hasMissingFont) {
+                console.log('[Plugin] Missing font detected, using default line-height');
+                return 1.2; // デフォルト値
             }
-            else if (lineHeightObj.unit === 'PIXELS') {
+            // フォントを読み込み
+            const fontName = node.fontName;
+            if (fontName === figma.mixed) {
+                // 複数フォントの場合は最初の文字のフォントを使用
+                const firstCharFont = node.getRangeFontName(0, 1);
+                yield figma.loadFontAsync(firstCharFont);
+            }
+            else {
+                yield figma.loadFontAsync(fontName);
+            }
+            // 改行を削除して一行に
+            const singleLineText = originalText.replace(/\n/g, '');
+            node.characters = singleLineText;
+            // 高さを取得（一行分の高さ）
+            const singleLineHeight = node.height;
+            // 元に戻す
+            node.characters = originalText;
+            // line-height = 一行の高さ / フォントサイズ
+            const calculatedLineHeight = singleLineHeight / fontSize;
+            console.log('[Plugin] Calculated auto line-height (multi-line):', calculatedLineHeight);
+            return calculatedLineHeight;
+        }
+        else {
+            // 一行の場合はそのまま計算
+            const calculatedLineHeight = node.height / fontSize;
+            console.log('[Plugin] Calculated auto line-height (single-line):', calculatedLineHeight);
+            return calculatedLineHeight;
+        }
+    });
+}
+function extractTextStyles(node_1) {
+    return __awaiter(this, arguments, void 0, function* (node, basePixelSize = 16) {
+        const fontSize = node.fontSize;
+        const fontWeight = node.fontWeight;
+        const fontFamily = node.fontName;
+        const letterSpacing = node.letterSpacing;
+        const lineHeight = node.lineHeight;
+        const textAlign = node.textAlignHorizontal;
+        let lineHeightValue = 1;
+        if (lineHeight && lineHeight !== figma.mixed) {
+            const lineHeightObj = lineHeight;
+            if ('value' in lineHeightObj && 'unit' in lineHeightObj) {
+                if (lineHeightObj.unit === 'PERCENT') {
+                    lineHeightValue = lineHeightObj.value / 100;
+                }
+                else if (lineHeightObj.unit === 'PIXELS') {
+                    lineHeightValue = lineHeightObj.value / fontSize;
+                }
+            }
+            else if (lineHeightObj.unit === 'AUTO') {
+                // Auto line-heightの場合、実際の高さから計算
+                lineHeightValue = yield calculateAutoLineHeight(node);
+            }
+            else if (typeof lineHeightObj === 'object' && 'value' in lineHeightObj) {
                 lineHeightValue = lineHeightObj.value / fontSize;
             }
         }
-        else if (typeof lineHeightObj === 'object' && 'value' in lineHeightObj) {
-            lineHeightValue = lineHeightObj.value / fontSize;
+        // テキスト配置の変換
+        let textAlignValue = 'left';
+        if (textAlign !== figma.mixed) {
+            switch (textAlign) {
+                case 'CENTER':
+                    textAlignValue = 'center';
+                    break;
+                case 'RIGHT':
+                    textAlignValue = 'right';
+                    break;
+                case 'JUSTIFIED':
+                    textAlignValue = 'justify';
+                    break;
+                default: textAlignValue = 'left';
+            }
         }
-    }
-    // テキスト配置の変換
-    let textAlignValue = 'left';
-    if (textAlign !== figma.mixed) {
-        switch (textAlign) {
-            case 'CENTER':
-                textAlignValue = 'center';
-                break;
-            case 'RIGHT':
-                textAlignValue = 'right';
-                break;
-            case 'JUSTIFIED':
-                textAlignValue = 'justify';
-                break;
-            default: textAlignValue = 'left';
-        }
-    }
-    return {
-        fontSize: pxToRem(fontSize, basePixelSize),
-        fontWeight: getFontWeightString(fontWeight),
-        fontFamily: fontFamily.family,
-        letterSpacing: letterSpacing !== figma.mixed ? letterSpacingToEm(letterSpacing) : '0em',
-        lineHeight: lineHeightValue.toFixed(2).replace(/\.?0+$/, ''),
-        textAlign: textAlignValue
-    };
+        return {
+            fontSize: pxToRem(fontSize, basePixelSize),
+            fontWeight: getFontWeightString(fontWeight),
+            fontFamily: fontFamily.family,
+            letterSpacing: letterSpacing !== figma.mixed ? letterSpacingToEm(letterSpacing) : '0em',
+            lineHeight: lineHeightValue.toFixed(2).replace(/\.?0+$/, ''),
+            textAlign: textAlignValue
+        };
+    });
 }
 function checkCurrentSelection() {
-    console.log('[Plugin] checkCurrentSelection called');
-    const selection = figma.currentPage.selection;
-    if (selection.length === 0) {
-        console.log('[Plugin] No selection found');
+    return __awaiter(this, void 0, void 0, function* () {
+        console.log('[Plugin] checkCurrentSelection called');
+        const selection = figma.currentPage.selection;
+        if (selection.length === 0) {
+            console.log('[Plugin] No selection found');
+            figma.ui.postMessage({
+                type: 'no-selection',
+                message: 'Please select a text element'
+            });
+            return;
+        }
+        const textNodes = selection.filter(node => node.type === 'TEXT');
+        if (textNodes.length === 0) {
+            console.log('[Plugin] No text nodes found');
+            figma.ui.postMessage({
+                type: 'no-text',
+                message: 'Please select a text element'
+            });
+            return;
+        }
+        const textNode = textNodes[0];
+        const styles = yield extractTextStyles(textNode, pluginSettings.basePixelSize);
+        console.log('[Plugin] Text styles extracted:', styles);
         figma.ui.postMessage({
-            type: 'no-selection',
-            message: 'Please select a text element'
+            type: 'style-extracted',
+            styles: styles
         });
-        return;
-    }
-    const textNodes = selection.filter(node => node.type === 'TEXT');
-    if (textNodes.length === 0) {
-        console.log('[Plugin] No text nodes found');
-        figma.ui.postMessage({
-            type: 'no-text',
-            message: 'Please select a text element'
-        });
-        return;
-    }
-    const textNode = textNodes[0];
-    const styles = extractTextStyles(textNode, pluginSettings.basePixelSize);
-    console.log('[Plugin] Text styles extracted:', styles);
-    figma.ui.postMessage({
-        type: 'style-extracted',
-        styles: styles
     });
 }
 // プラグイン側でエイリアスと設定を管理

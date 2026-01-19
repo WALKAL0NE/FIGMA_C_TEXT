@@ -30,7 +30,55 @@ function letterSpacingToEm(letterSpacing: { value: number, unit: string }): stri
   return '0em';
 }
 
-function extractTextStyles(node: TextNode, basePixelSize: number = 16): any {
+
+// Auto line-heightの実際の値を計算
+async function calculateAutoLineHeight(node: TextNode): Promise<number> {
+  const fontSize = node.fontSize as number;
+  const originalText = node.characters;
+  
+  // 改行を含むかチェック
+  const hasLineBreaks = originalText.includes('\n');
+  
+  if (hasLineBreaks) {
+    // Missing fontチェック
+    if (node.hasMissingFont) {
+      console.log('[Plugin] Missing font detected, using default line-height');
+      return 1.2; // デフォルト値
+    }
+    
+    // フォントを読み込み
+    const fontName = node.fontName;
+    if (fontName === figma.mixed) {
+      // 複数フォントの場合は最初の文字のフォントを使用
+      const firstCharFont = node.getRangeFontName(0, 1) as FontName;
+      await figma.loadFontAsync(firstCharFont);
+    } else {
+      await figma.loadFontAsync(fontName as FontName);
+    }
+    
+    // 改行を削除して一行に
+    const singleLineText = originalText.replace(/\n/g, '');
+    node.characters = singleLineText;
+    
+    // 高さを取得（一行分の高さ）
+    const singleLineHeight = node.height;
+    
+    // 元に戻す
+    node.characters = originalText;
+    
+    // line-height = 一行の高さ / フォントサイズ
+    const calculatedLineHeight = singleLineHeight / fontSize;
+    console.log('[Plugin] Calculated auto line-height (multi-line):', calculatedLineHeight);
+    return calculatedLineHeight;
+  } else {
+    // 一行の場合はそのまま計算
+    const calculatedLineHeight = node.height / fontSize;
+    console.log('[Plugin] Calculated auto line-height (single-line):', calculatedLineHeight);
+    return calculatedLineHeight;
+  }
+}
+
+async function extractTextStyles(node: TextNode, basePixelSize: number = 16): Promise<any> {
   const fontSize = node.fontSize as number;
   const fontWeight = node.fontWeight as number;
   const fontFamily = node.fontName as { family: string };
@@ -47,6 +95,9 @@ function extractTextStyles(node: TextNode, basePixelSize: number = 16): any {
       } else if (lineHeightObj.unit === 'PIXELS') {
         lineHeightValue = lineHeightObj.value / fontSize;
       }
+    } else if (lineHeightObj.unit === 'AUTO') {
+      // Auto line-heightの場合、実際の高さから計算
+      lineHeightValue = await calculateAutoLineHeight(node);
     } else if (typeof lineHeightObj === 'object' && 'value' in lineHeightObj) {
       lineHeightValue = lineHeightObj.value / fontSize;
     }
@@ -73,7 +124,7 @@ function extractTextStyles(node: TextNode, basePixelSize: number = 16): any {
   };
 }
 
-function checkCurrentSelection() {
+async function checkCurrentSelection() {
   console.log('[Plugin] checkCurrentSelection called');
   const selection = figma.currentPage.selection;
   
@@ -98,7 +149,7 @@ function checkCurrentSelection() {
   }
 
   const textNode = textNodes[0];
-  const styles = extractTextStyles(textNode, pluginSettings.basePixelSize);
+  const styles = await extractTextStyles(textNode, pluginSettings.basePixelSize);
   console.log('[Plugin] Text styles extracted:', styles);
   
   figma.ui.postMessage({
